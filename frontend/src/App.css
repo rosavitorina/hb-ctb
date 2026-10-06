@@ -1,0 +1,28 @@
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.flow-page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 24px;
+  color: #1f2937;
+  background: #f8fafc;
+  font-family: Arial, sans-serif;
+}
+
+.flow-page h1 {
+  margin: 0 0 20px;
+  font-size: 24px;
+}
+
+.flow-canvas {
+  height: 70vh;
+  min-height: 400px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+}
