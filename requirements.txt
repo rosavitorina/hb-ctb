@@ -2,6 +2,9 @@ fastapi
 uvicorn
 python-dotenv
 pydantic
+requests
+pymongo
+certifi
 
 langchain
 langchain-community
