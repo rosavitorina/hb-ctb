@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: hb-ctb
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: FMP_API_KEY
+        sync: false
+      - key: AUTH_COOKIE_SECURE
+        value: "true"

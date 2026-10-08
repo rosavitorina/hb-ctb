@@ -41,5 +41,19 @@ def salvar_cotacao_no_mongo(simbolo: str):
         client.close()
 
 
+def listar_cotacoes_no_mongo(limite: int = 50):
+    mongo_uri = os.getenv("MONGO_URI")
+    if not mongo_uri:
+        raise RuntimeError("MONGO_URI must be set in the environment or .env file")
+
+    client = MongoClient(mongo_uri, tls=True, tlsCAFile=certifi.where())
+    try:
+        colecao = client["integracao_db"]["respostas_api"]
+        documentos = colecao.find().sort("timestamp", -1).limit(limite)
+        return [{**documento, "_id": str(documento["_id"])} for documento in documentos]
+    finally:
+        client.close()
+
+
 if __name__ == "__main__":
     salvar_cotacao_no_mongo("AAPL")
