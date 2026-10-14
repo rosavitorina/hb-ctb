@@ -126,6 +126,31 @@ class AuthRouteTests(unittest.TestCase):
         self.assertEqual(create_session.call_args.args[1], "session-hash")
         self.assertIn(f"{SESSION_COOKIE}=raw-token", response.headers["set-cookie"])
 
+    def test_google_admin_promotion_keeps_mongo_id_for_session(self):
+        payload = SimpleNamespace(credential="google-credential")
+        request = SimpleNamespace(url=SimpleNamespace(scheme="https"), cookies={})
+        response = Response()
+        user = {"_id": "mongo-user-id", "id": "mongo-user-id", "email": "admin@example.com", "role": "user"}
+
+        with patch.dict("os.environ", {"INITIAL_ADMIN_EMAILS": "admin@example.com"}):
+            with patch(
+                "app.api.routes.auth.verify_google_id_token",
+                return_value={"email": "admin@example.com", "sub": "google-subject", "email_verified": True},
+            ):
+                with patch("app.api.routes.auth.get_user_by_email", return_value=user):
+                    with patch("app.api.routes.auth.update_user_role", return_value={
+                        "id": "mongo-user-id",
+                        "email": "admin@example.com",
+                        "role": "admin",
+                    }):
+                        with patch("app.api.routes.auth.create_session_token", return_value="raw-token"):
+                            with patch("app.api.routes.auth.hash_session_token", return_value="session-hash"):
+                                with patch("app.api.routes.auth.create_session") as create_session:
+                                    result = google_login(payload, request, response)
+
+        self.assertEqual(result, {"id": "mongo-user-id", "email": "admin@example.com", "role": "admin"})
+        self.assertEqual(create_session.call_args.args[0], "mongo-user-id")
+
     def test_current_user_requires_a_session_cookie(self):
         request = SimpleNamespace(cookies={})
 

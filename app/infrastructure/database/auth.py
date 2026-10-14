@@ -48,7 +48,12 @@ def create_user(email: str, password_hash: str, role: str | None = None) -> dict
     except DuplicateKeyError as exc:
         raise ValueError("An account with that email already exists") from exc
 
-    return {"id": str(result.inserted_id), "email": normalized_email, "role": normalized_role}
+    return {
+        "_id": result.inserted_id,
+        "id": str(result.inserted_id),
+        "email": normalized_email,
+        "role": normalized_role,
+    }
 
 
 def get_user_by_email(email: str) -> dict | None:

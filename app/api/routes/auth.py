@@ -144,7 +144,9 @@ def google_login(payload: GoogleLoginRequest, request: Request, response: Respon
         if profile.get("email_verified") and email.lower() in {
             configured.lower() for configured in os.getenv("INITIAL_ADMIN_EMAILS", "").split(",") if configured.strip()
         }:
-            user = update_user_role(email, "admin") or user
+            updated_user = update_user_role(email, "admin")
+            if updated_user:
+                user.update(updated_user)
         token = create_session_token()
         create_session(
             user["_id"],
