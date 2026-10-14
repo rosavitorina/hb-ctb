@@ -26,7 +26,17 @@ GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 
 Add `http://localhost:5173` for local development and `https://hb-t8z4.onrender.com` for the current production site. This sign-in flow does not use an OAuth redirect URI. Set the same `GOOGLE_CLIENT_ID` in Render’s service environment; the frontend reads it at runtime from `/auth/config`, so changing the client ID does not require rebuilding the frontend.
 
-Required email and admin settings:
+Google Cloud setup:
+
+1. In Google Cloud Console, select or create a project and configure Google Auth Platform branding and audience. Choose **External** if users outside your organization need access. Add test users while the consent screen is in Testing; publish the app before opening it to general users.
+2. Create an OAuth client with application type **Web application**.
+3. Add these authorized JavaScript origins (no redirect URI is needed):
+	- `http://localhost:5173`
+	- `https://hb-t8z4.onrender.com`
+4. Copy the client ID into local `.env` and the Render web service environment as `GOOGLE_CLIENT_ID`.
+5. Deploy the current repository revision and verify `https://hb-t8z4.onrender.com/auth/config` returns the configured client ID before testing sign-in.
+
+Optional legacy email-invite and administrator settings:
 
 ```env
 SMTP_HOST=smtp.example.com
@@ -38,7 +48,7 @@ EMAIL_USE_TLS=true
 INITIAL_ADMIN_EMAILS=admin1@example.com,admin2@example.com,admin3@example.com
 ```
 
-The Google OAuth config is required for the sign-in button. The backend validates the Google ID token, checks its audience against `GOOGLE_CLIENT_ID`, and creates or reuses the account using its verified email.
+The Google OAuth config is required for the sign-in button. The backend validates the Google ID token, checks its audience against `GOOGLE_CLIENT_ID`, and creates or reuses the account using its verified email. Legacy email/password and invite API routes remain for existing installations, but the website does not expose them.
 
 The app sends transactional email only when `SMTP_HOST` is configured. In local development, tests use mocked email delivery and no real mail is sent. The admin bootstrap is safe and idempotent: it promotes only the explicitly configured addresses, normalizes them to lowercase, and never grants privileges to the first registered user or any unlisted address.
 
@@ -78,23 +88,7 @@ Google sign-in is the account flow. The browser requests a Google identity token
 
 Google Identity Services provides sign-in, not website subscription billing. This app currently has no subscription checkout or billing integration. Website subscriptions require a separate billing provider; Google Play Billing is for eligible Android app distribution, not general web checkout.
 
-An administrator can still issue an email-bound, one-time invite from the repository root:
-
-```powershell
-python -m app.create_invite
-```
-
-Enter the developer's email. The CLI prints a random invite code once; share it privately with that developer. It expires after 72 hours, can only be redeemed once, and is bound to that email. The invited developer selects “Have an invite? Create account” on the sign-in page and sets their own password (at least 12 characters). Registration immediately signs them in. The database stores only the invite-code hash and a scrypt password hash. Users share the saved quote feed in this initial version.
-
-Administrators can still directly provision an account locally with `python -m app.create_user` when needed.
-
-To rotate an account password and revoke its active sessions, run:
-
-```powershell
-python -m app.reset_password
-```
-
-Login and invite registration are rate-limited in the single app process. If running multiple instances, move the limiter to shared storage such as Redis. Add account recovery/administration controls before treating this as a production identity system.
+Google sign-in creates an account on the user’s first successful login. Accounts matching `INITIAL_ADMIN_EMAILS` receive the administrator role only after Google verifies the email. Users can review their email and access role under **My account** and sign out from the sidebar.
 
 ## Deploy for remote teammates
 
@@ -108,6 +102,7 @@ After deployment, add the exact HTTPS origin to the OAuth client’s authorized 
 
 - `GET /health` checks that FastAPI is running.
 - `GET /auth/config` returns the public Google client ID; `POST /auth/google`, `GET /auth/me`, and `POST /auth/logout` manage Google sign-in sessions.
+- Legacy `POST /auth/login` and `POST /auth/register` routes remain for existing account migrations; the website does not expose them.
 - Login and registration are limited per client address to slow automated attempts.
 - `GET /quotes?limit=100` reads up to 100 saved MongoDB documents and requires a session. It does not contact FMP.
 - `POST /quotes/{symbol}` fetches a new quote from FMP, saves it to MongoDB, and requires a session. This uses the FMP API.
