@@ -10,5 +10,7 @@ services:
         sync: false
       - key: FMP_API_KEY
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
       - key: AUTH_COOKIE_SECURE
         value: "true"

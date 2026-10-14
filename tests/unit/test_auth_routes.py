@@ -6,11 +6,15 @@ from fastapi import HTTPException
 from starlette.responses import Response
 
 from app.api.dependencies import SESSION_COOKIE, get_current_user
-from app.api.routes.auth import login, logout, register
+from app.api.routes.auth import auth_config, google_login, login, logout, register
 from app.domain.schemas.auth import LoginRequest, RegisterRequest
 
 
 class AuthRouteTests(unittest.TestCase):
+    def test_auth_config_exposes_google_client_id(self):
+        with patch.dict("os.environ", {"GOOGLE_CLIENT_ID": "client-id"}):
+            self.assertEqual(auth_config(), {"google_client_id": "client-id"})
+
     def test_login_sets_http_only_session_cookie_and_stores_token_hash(self):
         account = LoginRequest(email="Trader@Example.com", password="long-enough-password")
         user = {
@@ -30,7 +34,7 @@ class AuthRouteTests(unittest.TestCase):
                             result = login(account, request, response)
 
         cookie = response.headers["set-cookie"]
-        self.assertEqual(result, {"id": "database-user-id", "email": "trader@example.com"})
+        self.assertEqual(result, {"id": "database-user-id", "email": "trader@example.com", "role": "user"})
         self.assertIn(f"{SESSION_COOKIE}=raw-token", cookie)
         self.assertIn("HttpOnly", cookie)
         self.assertIn("Secure", cookie)
@@ -72,7 +76,7 @@ class AuthRouteTests(unittest.TestCase):
                             with patch("app.api.routes.auth.create_session") as create_session:
                                 result = register(payload, request, response)
 
-        self.assertEqual(result, {"id": "database-user-id", "email": "trader@example.com"})
+        self.assertEqual(result, {"id": "database-user-id", "email": "trader@example.com", "role": "user"})
         create_user.assert_called_once_with("trader@example.com", "password-hash", "invite-hash")
         create_session.assert_called_once()
         self.assertEqual(create_session.call_args.args[1], "session-hash")
@@ -98,6 +102,29 @@ class AuthRouteTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 400)
         create_session.assert_not_called()
+
+    def test_google_login_creates_or_reuses_account_and_sets_session_cookie(self):
+        payload = SimpleNamespace(credential="google-credential")
+        request = SimpleNamespace(url=SimpleNamespace(scheme="https"), cookies={})
+        response = Response()
+        user = {"_id": "database-user-id", "id": "database-user-id", "email": "trader@example.com", "role": "user"}
+
+        with patch(
+            "app.api.routes.auth.verify_google_id_token",
+            return_value={"email": "Trader@Example.com", "sub": "google-subject", "email_verified": True},
+        ):
+            with patch("app.api.routes.auth.get_user_by_email", return_value=None):
+                with patch("app.api.routes.auth.create_user", return_value=user) as create_user:
+                    with patch("app.api.routes.auth.create_session_token", return_value="raw-token"):
+                        with patch("app.api.routes.auth.hash_session_token", return_value="session-hash"):
+                            with patch("app.api.routes.auth.create_session") as create_session:
+                                result = google_login(payload, request, response)
+
+        self.assertEqual(result, {"id": "database-user-id", "email": "trader@example.com", "role": "user"})
+        create_user.assert_called_once_with("trader@example.com", "google-oauth:google-subject", role="user")
+        create_session.assert_called_once()
+        self.assertEqual(create_session.call_args.args[1], "session-hash")
+        self.assertIn(f"{SESSION_COOKIE}=raw-token", response.headers["set-cookie"])
 
     def test_current_user_requires_a_session_cookie(self):
         request = SimpleNamespace(cookies={})

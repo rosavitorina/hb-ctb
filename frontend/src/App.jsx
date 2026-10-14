@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 function numericValue(value) {
@@ -78,112 +78,128 @@ function QuoteCard({ quote }) {
   );
 }
 
+function loadGoogleIdentity() {
+  if (window.google?.accounts?.id) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    let script = document.querySelector('script[data-google-identity="true"]');
+    if (!script) {
+      script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.dataset.googleIdentity = "true";
+      document.head.appendChild(script);
+    }
+
+    script.addEventListener("load", () => {
+      if (window.google?.accounts?.id) resolve();
+      else reject(new Error("Google sign-in could not be loaded."));
+    }, { once: true });
+    script.addEventListener("error", () => reject(new Error("Google sign-in could not be loaded.")), { once: true });
+  });
+}
+
 function SignInView({ initialError, onSignedIn }) {
-  const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState(initialError);
   const [submitting, setSubmitting] = useState(false);
+  const [googleStatus, setGoogleStatus] = useState("loading");
+  const googleButtonRef = useRef(null);
+  const onSignedInRef = useRef(onSignedIn);
+  onSignedInRef.current = onSignedIn;
 
-  async function submit(event) {
-    event.preventDefault();
-    setError("");
-    setSubmitting(true);
-    const registering = mode === "register";
-    try {
-      const response = await fetch(registering ? "/auth/register" : "/auth/login", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          password,
-          ...(registering ? { invite_code: inviteCode.trim() } : {}),
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.detail || `Sign-in failed with HTTP ${response.status}.`);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initializeGoogleSignIn() {
+      try {
+        const configResponse = await fetch("/auth/config", { credentials: "same-origin" });
+        const config = await configResponse.json().catch(() => ({}));
+        if (!configResponse.ok) throw new Error(config.detail || "Sign-in configuration is unavailable.");
+        if (!config.google_client_id) {
+          if (!cancelled) setGoogleStatus("unconfigured");
+          return;
+        }
+
+        await loadGoogleIdentity();
+        if (cancelled) return;
+
+        window.google.accounts.id.initialize({
+          client_id: config.google_client_id,
+          callback: async ({ credential }) => {
+            if (!credential) {
+              setError("Google sign-in was cancelled.");
+              return;
+            }
+
+            setError("");
+            setSubmitting(true);
+            try {
+              const response = await fetch("/auth/google", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ credential }),
+              });
+              const payload = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(payload.detail || `Google sign-in failed with HTTP ${response.status}.`);
+              }
+              onSignedInRef.current(payload);
+            } catch (googleError) {
+              setError(googleError.message || "Google sign-in is not available right now.");
+            } finally {
+              setSubmitting(false);
+            }
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
+
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+          theme: "outline",
+          size: "large",
+          type: "standard",
+          text: "continue_with",
+          shape: "rectangular",
+          logo_alignment: "left",
+          width: Math.min(320, Math.floor(googleButtonRef.current.clientWidth || 320)),
+        });
+        setGoogleStatus("ready");
+      } catch (googleError) {
+        if (!cancelled) {
+          setError(googleError.message || "Google sign-in could not be initialized.");
+          setGoogleStatus("unavailable");
+        }
       }
-      onSignedIn(payload);
-    } catch (signInError) {
-      setError(signInError.message || "Could not connect to the sign-in service.");
-    } finally {
-      setSubmitting(false);
     }
-  }
+
+    initializeGoogleSignIn();
+    return () => {
+      cancelled = true;
+      window.google?.accounts?.id?.cancel();
+    };
+  }, []);
 
   return (
     <main className="auth-content">
-      <form className="signin-form" onSubmit={submit}>
+      <section className="signin-form">
         <span className="eyebrow">PRIVATE MARKET WORKSPACE</span>
-        <h1>{mode === "login" ? "Welcome back" : "Create your account"}</h1>
-        <p className="signin-intro">
-          {mode === "login"
-            ? "Sign in to view your saved market snapshots."
-            : "Use the email address and one-time invite code sent to you."}
-        </p>
+        <h1>Sign in with Google</h1>
+        <p className="signin-intro">Use your Google account to access your saved market snapshots.</p>
 
-        <label htmlFor="signin-email">Email</label>
-        <input
-          id="signin-email"
-          type="email"
-          autoComplete="username"
-          maxLength={254}
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-        />
-
-        {mode === "register" && (
-          <>
-            <label htmlFor="invite-code">Invite code</label>
-            <input
-              id="invite-code"
-              type="text"
-              autoComplete="one-time-code"
-              maxLength={200}
-              value={inviteCode}
-              onChange={(event) => setInviteCode(event.target.value)}
-              required
-            />
-          </>
+        <div className={submitting ? "google-button pending" : "google-button"} ref={googleButtonRef} />
+        {googleStatus === "loading" && <p className="google-status" role="status">Preparing secure sign-in...</p>}
+        {googleStatus === "unconfigured" && (
+          <p className="google-status" role="status">Google sign-in is not configured for this site yet.</p>
+        )}
+        {googleStatus === "unavailable" && (
+          <p className="google-status" role="status">Google sign-in is temporarily unavailable. Please try again later.</p>
         )}
 
-        <label htmlFor="signin-password">Password</label>
-        <input
-          id="signin-password"
-          type="password"
-          autoComplete={mode === "login" ? "current-password" : "new-password"}
-          minLength={mode === "login" ? 8 : 12}
-          maxLength={128}
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
-
         {error && <p className="signin-error" role="alert">{error}</p>}
-
-        <button className="signin-button" type="submit" disabled={submitting}>
-          {submitting
-            ? mode === "login" ? "Signing in..." : "Creating account..."
-            : mode === "login" ? "Sign in" : "Create account"}
-        </button>
-        <button
-          className="auth-mode-toggle"
-          type="button"
-          disabled={submitting}
-          onClick={() => {
-            setMode((currentMode) => currentMode === "login" ? "register" : "login");
-            setError("");
-            setPassword("");
-            setInviteCode("");
-          }}
-        >
-          {mode === "login" ? "Have an invite? Create account" : "Back to sign in"}
-        </button>
-      </form>
+        {submitting && <p className="google-status" role="status">Signing you in...</p>}
+      </section>
     </main>
   );
 }
@@ -197,6 +213,8 @@ export default function App() {
   const [status, setStatus] = useState("loading");
   const [reloadKey, setReloadKey] = useState(0);
   const [error, setError] = useState("");
+  const [adminMessage, setAdminMessage] = useState("");
+  const [activeView, setActiveView] = useState("market");
 
   useEffect(() => {
     let cancelled = false;
@@ -290,6 +308,19 @@ export default function App() {
     }
   }
 
+  async function loadAdminSummary() {
+    try {
+      const response = await fetch("/auth/admin/summary", { credentials: "same-origin" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || `Admin access failed with HTTP ${response.status}.`);
+      }
+      setAdminMessage(`Admin access confirmed for ${payload.email}.`);
+    } catch (adminError) {
+      setAdminMessage(adminError.message || "Admin access is unavailable.");
+    }
+  }
+
   const activeQuote = quotes[activeIndex];
 
   return (
@@ -330,16 +361,25 @@ export default function App() {
             </div>
 
             <nav className="side-nav" aria-label="Profile navigation">
-              <div className="nav-item active" aria-current="page">
+              <button className={activeView === "market" ? "nav-item active" : "nav-item"} type="button" onClick={() => setActiveView("market")} aria-current={activeView === "market" ? "page" : undefined}>
                 <span className="nav-glyph market-glyph" aria-hidden="true" />
                 <span>Market updates</span>
-                <span className="nav-current" aria-hidden="true" />
-              </div>
-              <button className="nav-item" type="button" disabled>
-                <span className="nav-glyph profile-glyph" aria-hidden="true" />
-                <span>My profile</span>
+                {activeView === "market" && <span className="nav-current" aria-hidden="true" />}
               </button>
+              <button className={activeView === "account" ? "nav-item active" : "nav-item"} type="button" onClick={() => setActiveView("account")} aria-current={activeView === "account" ? "page" : undefined}>
+                <span className="nav-glyph profile-glyph" aria-hidden="true" />
+                <span>My account</span>
+                {activeView === "account" && <span className="nav-current" aria-hidden="true" />}
+              </button>
+              {user?.role === "admin" && (
+                <button className="nav-item" type="button" onClick={loadAdminSummary}>
+                  <span className="nav-glyph profile-glyph" aria-hidden="true" />
+                  <span>Admin tools</span>
+                </button>
+              )}
             </nav>
+
+            {adminMessage && <div className="sidebar-note"><span>{adminMessage}</span></div>}
 
             <div className="sidebar-note">
               <span className="note-rule" />
@@ -351,7 +391,20 @@ export default function App() {
           </aside>
 
           <main className="main-content">
-            <section className="market-view">
+            {activeView === "account" ? (
+              <section className="account-view">
+                <div className="page-heading">
+                  <span className="eyebrow">ACCOUNT</span>
+                  <h1>Your account</h1>
+                  <p>Your sign-in identity and workspace access.</p>
+                </div>
+                <dl className="account-details">
+                  <div><dt>Email</dt><dd>{user?.email}</dd></div>
+                  <div><dt>Sign-in provider</dt><dd>Google</dd></div>
+                  <div><dt>Access</dt><dd>{user?.role === "admin" ? "Administrator" : "Member"}</dd></div>
+                </dl>
+              </section>
+            ) : <section className="market-view">
               <div className="page-heading">
                 <span className="eyebrow">SAVED MARKET DATA</span>
                 <h1>Your market updates</h1>
@@ -429,7 +482,7 @@ export default function App() {
                   </div>
                 </>
               )}
-            </section>
+            </section>}
           </main>
         </div>
       )}

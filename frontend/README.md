@@ -1,6 +1,6 @@
 # HB-CTB frontend
 
-The React dashboard shows quote snapshots already saved in MongoDB. Sign-in is handled by FastAPI sessions; the browser never receives MongoDB or FMP credentials. The dashboard reads saved records and does not fetch fresh market data from FMP.
+The React dashboard shows quote snapshots already saved in MongoDB. Google sign-in is handled by FastAPI sessions; the browser never receives MongoDB or FMP credentials. The dashboard reads saved records and does not fetch fresh market data from FMP.
 
 ## Start the app
 
@@ -19,7 +19,7 @@ npm.cmd run dev
 
 Open the URL printed by Vite. Its development proxy forwards `/auth` and `/quotes` to `http://127.0.0.1:8000`.
 
-Account creation is invite-only. An administrator issues a one-time code with `python -m app.create_invite`; the developer uses it on the sign-in page to create their own password.
+Google sign-in is the account flow. Set `GOOGLE_CLIENT_ID` in the backend environment; the frontend reads it from `/auth/config`. Add the local Vite origin and the deployed website origin to the OAuth client’s authorized JavaScript origins in Google Cloud Console.
 
 For remote access, deploy the repository with the root `render.yaml` Blueprint. FastAPI serves the built frontend and API from one HTTPS origin; MongoDB and FMP credentials are configured as host environment secrets, never in the browser.
 # React + Vite

@@ -662,6 +662,24 @@
   line-height: 1.5;
 }
 
+.google-button {
+  min-height: 44px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.google-button.pending {
+  pointer-events: none;
+  opacity: .65;
+}
+
+.google-status {
+  margin: 0;
+  color: #69749d;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .signin-form label {
   margin-top: 4px;
   color: #26336f;
@@ -721,6 +739,33 @@
   font-size: 11px;
   line-height: 1.45;
   text-align: center;
+}
+
+.account-details {
+  display: grid;
+  max-width: 760px;
+  margin: 32px 0 0;
+  border-top: 1px solid rgb(219 226 255 / 35%);
+}
+
+.account-details > div {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px 0;
+  border-bottom: 1px solid rgb(219 226 255 / 35%);
+}
+
+.account-details dt {
+  color: #aab6ef;
+  font-size: 12px;
+}
+
+.account-details dd {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .auth-mode-toggle {
@@ -862,6 +907,11 @@
   .main-content {
     flex: 1;
     padding: 33px 18px 40px;
+  }
+
+  .account-details > div {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .auth-content {

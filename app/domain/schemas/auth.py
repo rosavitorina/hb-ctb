@@ -19,6 +19,7 @@ class LoginRequest(BaseModel):
 class AccountResponse(BaseModel):
     id: str
     email: str
+    role: str = "user"
 
 
 class EmailAddress(BaseModel):
@@ -36,3 +37,7 @@ class EmailAddress(BaseModel):
 class RegisterRequest(LoginRequest):
     password: str = Field(min_length=12, max_length=128)
     invite_code: str = Field(min_length=20, max_length=200)
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str = Field(min_length=20, max_length=20000)

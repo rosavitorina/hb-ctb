@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import os
 import secrets
 
 _SCRYPT_N = 2**14
@@ -8,6 +9,17 @@ _SCRYPT_R = 8
 _SCRYPT_P = 1
 _SALT_SIZE = 16
 _HASH_SIZE = 32
+VALID_ROLES = {"admin", "user"}
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def normalize_role(role: str | None) -> str:
+    if role not in VALID_ROLES:
+        return "user"
+    return role
 
 
 def hash_password(password: str) -> str:
@@ -59,3 +71,35 @@ def hash_session_token(token: str) -> str:
 
 def hash_invite_code(code: str) -> str:
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def update_user_role(email: str, role: str) -> dict | None:
+    from app.infrastructure.database.auth import update_user_role as store_update_user_role
+
+    return store_update_user_role(email, role)
+
+
+def bootstrap_admins() -> list[str]:
+    configured = os.getenv("INITIAL_ADMIN_EMAILS", "")
+    if not configured.strip():
+        return []
+
+    emails: list[str] = []
+    seen: set[str] = set()
+    for raw_email in configured.split(","):
+        normalized = normalize_email(raw_email)
+        if not normalized or normalized in seen or "@" not in normalized:
+            continue
+        seen.add(normalized)
+        emails.append(normalized)
+
+    emails = emails[:3]
+    for email in emails:
+        update_user_role(email, "admin")
+    return emails
+
+
+def backfill_default_roles() -> None:
+    from app.infrastructure.database.auth import backfill_user_roles
+
+    backfill_user_roles()

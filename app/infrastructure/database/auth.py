@@ -7,6 +7,14 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
+VALID_ROLES = {"admin", "user"}
+
+
+def normalize_role(role: str | None) -> str:
+    if role not in VALID_ROLES:
+        return "user"
+    return role
+
 
 @contextmanager
 def _auth_collections():
@@ -23,21 +31,24 @@ def _auth_collections():
         client.close()
 
 
-def create_user(email: str, password_hash: str) -> dict:
+def create_user(email: str, password_hash: str, role: str | None = None) -> dict:
+    normalized_email = email.strip().lower()
+    normalized_role = normalize_role(role)
     try:
         with _auth_collections() as (users, _, _):
             users.create_index("email", unique=True)
             result = users.insert_one(
                 {
-                    "email": email.strip().lower(),
+                    "email": normalized_email,
                     "password_hash": password_hash,
+                    "role": normalized_role,
                     "created_at": datetime.now(timezone.utc),
                 }
             )
     except DuplicateKeyError as exc:
         raise ValueError("An account with that email already exists") from exc
 
-    return {"id": str(result.inserted_id), "email": email.strip().lower()}
+    return {"id": str(result.inserted_id), "email": normalized_email, "role": normalized_role}
 
 
 def get_user_by_email(email: str) -> dict | None:
@@ -47,6 +58,7 @@ def get_user_by_email(email: str) -> dict | None:
     if user is None:
         return None
     user["id"] = str(user["_id"])
+    user["role"] = normalize_role(user.get("role"))
     return user
 
 
@@ -119,6 +131,7 @@ def register_invited_user(
                 {
                     "email": normalized_email,
                     "password_hash": password_hash,
+                    "role": "user",
                     "created_at": now,
                 }
             )
@@ -129,6 +142,7 @@ def register_invited_user(
         "_id": result.inserted_id,
         "id": str(result.inserted_id),
         "email": normalized_email,
+        "role": "user",
     }
 
 
@@ -158,7 +172,29 @@ def get_user_for_session(token_hash: str) -> dict | None:
     if user is None:
         return None
     user_id = str(user.pop("_id"))
-    return {"id": user_id, "email": user["email"]}
+    return {"id": user_id, "email": user["email"], "role": normalize_role(user.get("role"))}
+
+
+def update_user_role(email: str, role: str) -> dict | None:
+    normalized_email = email.strip().lower()
+    normalized_role = normalize_role(role)
+    with _auth_collections() as (users, _, _):
+        user = users.find_one({"email": normalized_email}, {"_id": 1, "email": 1, "role": 1})
+        if user is None:
+            return None
+        users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"role": normalized_role, "updated_at": datetime.now(timezone.utc)}},
+        )
+    return {"id": str(user["_id"]), "email": user["email"], "role": normalized_role}
+
+
+def backfill_user_roles() -> None:
+    with _auth_collections() as (users, _, _):
+        for user in users.find({"role": {"$exists": False}}):
+            users.update_one({"_id": user["_id"]}, {"$set": {"role": "user"}})
+        for user in users.find({"role": {"$in": [None, ""]}}):
+            users.update_one({"_id": user["_id"]}, {"$set": {"role": "user"}})
 
 
 def delete_session(token_hash: str) -> None:

@@ -18,6 +18,36 @@ Copy-Item .env.example .env
 
 Set `MONGO_URI` in `.env` to read accounts and saved quotes from MongoDB. `FMP_API_KEY` is only needed when fetching new quotes; opening the dashboard reads existing MongoDB records and does not spend FMP quota. Keep real credentials private; `.env` is ignored by Git and excluded from the deployment image.
 
+Create a Google OAuth 2.0 Web application client in Google Cloud Console. Add your local and deployed website origins as authorized JavaScript origins, then set the client ID in `.env`. The ID is public; do not add a client secret because Google Identity Services returns an ID token that FastAPI validates server-side.
+
+```env
+GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+```
+
+Add `http://localhost:5173` for local development and `https://hb-t8z4.onrender.com` for the current production site. This sign-in flow does not use an OAuth redirect URI. Set the same `GOOGLE_CLIENT_ID` in Render’s service environment; the frontend reads it at runtime from `/auth/config`, so changing the client ID does not require rebuilding the frontend.
+
+Required email and admin settings:
+
+```env
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=your-smtp-user
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM=noreply@example.com
+EMAIL_USE_TLS=true
+INITIAL_ADMIN_EMAILS=admin1@example.com,admin2@example.com,admin3@example.com
+```
+
+The Google OAuth config is required for the sign-in button. The backend validates the Google ID token, checks its audience against `GOOGLE_CLIENT_ID`, and creates or reuses the account using its verified email.
+
+The app sends transactional email only when `SMTP_HOST` is configured. In local development, tests use mocked email delivery and no real mail is sent. The admin bootstrap is safe and idempotent: it promotes only the explicitly configured addresses, normalizes them to lowercase, and never grants privileges to the first registered user or any unlisted address.
+
+To promote the three configured administrators, start the app once with the environment values set and the database reachable. The startup hook runs the bootstrapping process automatically. If you prefer a one-off command, run:
+
+```powershell
+python -c "from app.services.auth_service import bootstrap_admins; print(bootstrap_admins())"
+```
+
 ## Run locally
 
 Install backend dependencies from the repository root:
@@ -44,7 +74,11 @@ Open the local URL Vite prints, usually `http://localhost:5173/`. The Vite devel
 
 ## Accounts
 
-An administrator can issue an email-bound, one-time invite from the repository root:
+Google sign-in is the account flow. The browser requests a Google identity token, the backend verifies it with Google, and the app creates or reuses the account based on its verified email. If the email matches `INITIAL_ADMIN_EMAILS`, that account is promoted to `admin` automatically. Users can view their email and access role under **My account** and sign out from the sidebar.
+
+Google Identity Services provides sign-in, not website subscription billing. This app currently has no subscription checkout or billing integration. Website subscriptions require a separate billing provider; Google Play Billing is for eligible Android app distribution, not general web checkout.
+
+An administrator can still issue an email-bound, one-time invite from the repository root:
 
 ```powershell
 python -m app.create_invite
@@ -64,16 +98,16 @@ Login and invite registration are rate-limited in the single app process. If run
 
 ## Deploy for remote teammates
 
-The repository includes a Render Blueprint and Docker build for a single HTTPS web service. Push the project to GitHub, then in Render create a new Blueprint and connect this repository. Render reads `render.yaml` and asks you to provide `MONGO_URI` and `FMP_API_KEY` as service secrets. Do not add either value to this repository. `AUTH_COOKIE_SECURE=true` is configured for HTTPS cookies.
+The repository includes a Render Blueprint and Docker build for a single HTTPS web service. Push the project to GitHub, then deploy the Blueprint or update the existing service. Configure `MONGO_URI`, `FMP_API_KEY`, and `GOOGLE_CLIENT_ID` in Render’s environment settings. Do not commit secret values. `AUTH_COOKIE_SECURE=true` is configured for HTTPS cookies.
 
 Before deployment succeeds, allow the Render service's outbound IP addresses in MongoDB Atlas Network Access. Keep the database user restricted to the required database and permissions; avoid opening Atlas to all IPs if your hosting plan provides specific outbound addresses.
 
-After deployment, use the HTTPS URL Render provides. To invite a teammate, run `python -m app.create_invite` locally with the same MongoDB URI in your ignored `.env`, then share the email-bound code privately. The teammate creates their own password on the hosted sign-in page. The browser never connects directly to MongoDB or receives the FMP key.
+After deployment, add the exact HTTPS origin to the OAuth client’s authorized JavaScript origins and set `GOOGLE_CLIENT_ID` in Render. The browser never connects directly to MongoDB or receives the FMP key.
 
 ## API
 
 - `GET /health` checks that FastAPI is running.
-- `POST /auth/login`, `POST /auth/register`, `GET /auth/me`, and `POST /auth/logout` manage sign-in. Registration requires an email-matched active invite.
+- `GET /auth/config` returns the public Google client ID; `POST /auth/google`, `GET /auth/me`, and `POST /auth/logout` manage Google sign-in sessions.
 - Login and registration are limited per client address to slow automated attempts.
 - `GET /quotes?limit=100` reads up to 100 saved MongoDB documents and requires a session. It does not contact FMP.
 - `POST /quotes/{symbol}` fetches a new quote from FMP, saves it to MongoDB, and requires a session. This uses the FMP API.
