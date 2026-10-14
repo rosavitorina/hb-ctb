@@ -7,7 +7,7 @@ from app.api.middleware.auth_rate_limit import AuthRateLimitMiddleware
 
 
 class AuthRateLimitTests(unittest.TestCase):
-    def test_login_attempts_are_limited_per_client(self):
+    def test_google_login_attempts_are_limited_per_client(self):
         middleware = AuthRateLimitMiddleware(lambda scope, receive, send: None)
         request = Request(
             {
@@ -15,8 +15,8 @@ class AuthRateLimitTests(unittest.TestCase):
                 "http_version": "1.1",
                 "method": "POST",
                 "scheme": "http",
-                "path": "/auth/login",
-                "raw_path": b"/auth/login",
+                "path": "/auth/google",
+                "raw_path": b"/auth/google",
                 "query_string": b"",
                 "headers": [],
                 "client": ("192.0.2.10", 45000),

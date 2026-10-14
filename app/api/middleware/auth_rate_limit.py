@@ -9,8 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 
 AUTH_LIMITS = {
-    "/auth/login": (10, 60),
-    "/auth/register": (5, 60 * 60),
+    "/auth/google": (10, 60),
 }
 MAX_TRACKED_CLIENTS = 4096
 
